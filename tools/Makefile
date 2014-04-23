@@ -34,7 +34,7 @@ distclean: clean
 
 install: $(TARGETS)
 	$(MKDIR) $(DESTDIR)$(PREFIX)/bin
-	$(INSTALL) -m 0755 -- ldd $(DESTDIR)$(PREFIX)/bin/ldd
+	$(INSTALL) -m 0755 ldd $(DESTDIR)$(PREFIX)/bin/ldd
 
 uninstall:
 	$(RM) -- $(DESTDIR)$(PREFIX)/bin/ldd
