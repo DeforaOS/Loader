@@ -33,10 +33,10 @@ distclean: clean
 	$(RM) -- $(TARGETS)
 
 install: $(TARGETS)
-	$(MKDIR) $(DESTDIR)$(PREFIX)/bin
-	$(INSTALL) -m 0755 ldd $(DESTDIR)$(PREFIX)/bin/ldd
+	$(MKDIR) $(DESTDIR)$(BINDIR)
+	$(INSTALL) -m 0755 ldd $(DESTDIR)$(BINDIR)/ldd
 
 uninstall:
-	$(RM) -- $(DESTDIR)$(PREFIX)/bin/ldd
+	$(RM) -- $(DESTDIR)$(BINDIR)/ldd
 
 .PHONY: all clean distclean install uninstall
