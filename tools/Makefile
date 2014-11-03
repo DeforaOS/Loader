@@ -1,4 +1,5 @@
-TARGETS	= ldd
+TARGETS	= $(OBJDIR)ldd
+OBJDIR	=
 PREFIX	= /usr/local
 DESTDIR	=
 BINDIR	= $(PREFIX)/bin
@@ -16,15 +17,15 @@ INSTALL	= install
 
 all: $(TARGETS)
 
-ldd_OBJS = ldd.o
+ldd_OBJS = $(OBJDIR)ldd.o
 ldd_CFLAGS = $(CPPFLAGSF) $(CPPFLAGS) $(CFLAGSF) $(CFLAGS)
 ldd_LDFLAGS = $(LDFLAGSF) $(LDFLAGS)
 
-ldd: $(ldd_OBJS)
-	$(CC) -o ldd $(ldd_OBJS) $(ldd_LDFLAGS)
+$(OBJDIR)ldd: $(ldd_OBJS)
+	$(CC) -o $(OBJDIR)ldd $(ldd_OBJS) $(ldd_LDFLAGS)
 
-ldd.o: ldd.c elf.c
-	$(CC) $(ldd_CFLAGS) -c ldd.c
+$(OBJDIR)ldd.o: ldd.c elf.c
+	$(CC) $(ldd_CFLAGS) -o $(OBJDIR)ldd.o -c ldd.c
 
 clean:
 	$(RM) -- $(ldd_OBJS)
@@ -34,7 +35,7 @@ distclean: clean
 
 install: $(TARGETS)
 	$(MKDIR) $(DESTDIR)$(BINDIR)
-	$(INSTALL) -m 0755 ldd $(DESTDIR)$(BINDIR)/ldd
+	$(INSTALL) -m 0755 $(OBJDIR)ldd $(DESTDIR)$(BINDIR)/ldd
 
 uninstall:
 	$(RM) -- $(DESTDIR)$(BINDIR)/ldd
