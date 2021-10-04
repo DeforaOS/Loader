@@ -57,8 +57,8 @@ static int _loader_do(int fd, char const * filename, int argc, char * argv[]);
 static int _do_phdr(int fd, char const * filename, Elf_Ehdr * ehdr);
 static size_t _do_phdr_align_bits(unsigned long align);
 static int _do_shdr(int fd, char const * filename, Elf_Ehdr * ehdr);
-static int _do_shdr_rel(int fd, char const * filename, Elf_Shdr * shdr);
-static int _do_shdr_rela(int fd, char const * filename, Elf_Shdr * shdr);
+static int _do_shdr_rela(int fd, char const * filename, Elf_Shdr * shdr,
+		size_t entsize);
 
 int loader(char const * filename, int argc, char * argv[])
 {
@@ -230,10 +230,10 @@ static int _do_shdr(int fd, char const * filename, Elf_Ehdr * ehdr)
 				(unsigned long)shdr.sh_addralign,
 				(unsigned long)shdr.sh_entsize);
 #endif
-		if(shdr.sh_type == SHT_REL)
-			ret = _do_shdr_rel(fd, filename, &shdr);
-		else if(shdr.sh_type == SHT_RELA)
-			ret = _do_shdr_rela(fd, filename, &shdr);
+		if(shdr.sh_type == SHT_REL
+				|| shdr.sh_type == SHT_RELA)
+			ret = _do_shdr_rela(fd, filename, &shdr,
+					shdr.sh_entsize);
 		else
 			continue;
 		if(ret != 0)
@@ -245,60 +245,22 @@ static int _do_shdr(int fd, char const * filename, Elf_Ehdr * ehdr)
 	return 0;
 }
 
-static int _do_shdr_rel(int fd, char const * filename, Elf_Shdr * shdr)
-{
-	Elf_Rel rel;
-	size_t i;
-
-	if(shdr->sh_entsize != sizeof(rel))
-		return _error(2, "%s: %s", filename,
-				"Invalid or unsupported ELF file");
-	if(lseek(fd, shdr->sh_offset, SEEK_SET) != (off_t)shdr->sh_offset)
-		return _error(2, "%s: %s", filename, strerror(errno));
-	for(i = 0; i + sizeof(rel) < shdr->sh_size; i += sizeof(rel))
-	{
-		if(read(fd, &rel, sizeof(rel)) != sizeof(rel))
-			return _error(2, "%s: %s", filename,
-					"Invalid or unsupported ELF file");
-#ifdef DEBUG
-		fprintf(stderr, "DEBUG: %zu: r_offset=%#lx r_type=%lu \n", i,
-				(unsigned long)rel.r_offset,
-				(unsigned long)ELF_R_TYPE(rel.r_info));
-#endif
-		switch(ELF_R_TYPE(rel.r_info))
-		{
-#if defined(__amd64__)
-			case R_X86_64_NONE:
-				break;
-			case R_X86_64_GLOB_DAT:
-			case R_X86_64_JUMP_SLOT:
-			case R_X86_64_RELATIVE:
-				/* FIXME implement */
-				break;
-#endif
-			default:
-				return _error(2, "%s: %lu:"
-						" Unsupported relocation\n",
-						filename,
-						ELF_R_TYPE(rel.r_info));
-		}
-	}
-	return 0;
-}
-
-static int _do_shdr_rela(int fd, char const * filename, Elf_Shdr * shdr)
+static int _do_shdr_rela(int fd, char const * filename, Elf_Shdr * shdr,
+		size_t entsize)
 {
 	Elf_Rela rela;
 	size_t i;
 
-	if(shdr->sh_entsize != sizeof(rela))
+	rela.r_addend = 0;
+	/* TODO test according to sh_type */
+	if(entsize != sizeof(rela) && entsize != sizeof(Elf_Rel))
 		return _error(2, "%s: %s", filename,
 				"Invalid or unsupported ELF file");
 	if(lseek(fd, shdr->sh_offset, SEEK_SET) != (off_t)shdr->sh_offset)
 		return _error(2, "%s: %s", filename, strerror(errno));
-	for(i = 0; i + sizeof(rela) < shdr->sh_size; i += sizeof(rela))
+	for(i = 0; i + entsize < shdr->sh_size; i += entsize)
 	{
-		if(read(fd, &rela, sizeof(rela)) != sizeof(rela))
+		if(read(fd, &rela, entsize) != (ssize_t)entsize)
 			return _error(2, "%s: %s", filename,
 					"Invalid or unsupported ELF file");
 #ifdef DEBUG
