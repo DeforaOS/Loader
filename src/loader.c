@@ -49,6 +49,8 @@
 /* prototypes */
 static int _error(int code, char const * format, ...);
 
+static int _prot(int flags);
+
 
 /* public */
 /* functions */
@@ -131,10 +133,6 @@ static int _do_phdr(int fd, char const * filename, Elf_Ehdr * ehdr)
 #endif
 		if(phdr.p_type != PT_LOAD)
 			continue;
-		prot = PROT_NONE;
-		prot |= (phdr.p_flags & PF_R) ? PROT_READ : 0;
-		prot |= (phdr.p_flags & PF_W) ? PROT_WRITE : 0;
-		prot |= (phdr.p_flags & PF_X) ? PROT_EXEC : 0;
 		flags = MAP_ALIGNED(_do_phdr_align_bits(phdr.p_align));
 		if(phdr.p_filesz == 0)
 		{
@@ -142,15 +140,17 @@ static int _do_phdr(int fd, char const * filename, Elf_Ehdr * ehdr)
 			addr = NULL;
 #endif
 			flags |= MAP_ANON;
+			prot = _prot(phdr.p_flags);
 			f = -1;
 			offset = 0;
 		}
-		else
+		else if(phdr.p_filesz == phdr.p_memsz)
 		{
 #if 0
 			addr = (void *)phdr.p_vaddr;
 #endif
 			flags |= MAP_FILE;
+			prot = _prot(phdr.p_flags);
 #if 0
 			if(phdr.p_vaddr != 0)
 				flags |= MAP_TRYFIXED;
@@ -160,6 +160,16 @@ static int _do_phdr(int fd, char const * filename, Elf_Ehdr * ehdr)
 			f = fd;
 			offset = phdr.p_offset;
 		}
+		else if(phdr.p_filesz < phdr.p_memsz)
+		{
+			flags |= MAP_ANON;
+			prot = PROT_READ | PROT_WRITE;
+			f = -1;
+			offset = 0;
+		}
+		else
+			return _error(2, "%s: %s", filename,
+					"Invalid or unsupported ELF file");
 #ifdef DEBUG
 		fprintf(stderr, "DEBUG: mmap(%p, %lu, %d, %d, %d, %lld)\n",
 				NULL, (unsigned long)phdr.p_memsz, prot, flags,
@@ -168,13 +178,31 @@ static int _do_phdr(int fd, char const * filename, Elf_Ehdr * ehdr)
 		if((addr = mmap(NULL, phdr.p_memsz, prot, flags, f, offset))
 				== MAP_FAILED)
 			return _error(2, "%s: %s", filename, strerror(errno));
-		/* zero memory if relevant */
-		if(phdr.p_filesz > 0
-				&& prot & PROT_WRITE
-				&& phdr.p_memsz > phdr.p_filesz)
-			/* FIXME will crash if a page too far */
+		/* copy and zero memory if relevant */
+		if(phdr.p_filesz > 0 && phdr.p_memsz > phdr.p_filesz)
+		{
+			if(lseek(fd, offset, SEEK_SET) != offset
+					|| read(fd, addr, phdr.p_filesz)
+					!= (ssize_t)phdr.p_filesz)
+				return _error(2, "%s: %s", filename,
+						strerror(errno));
 			memset(&addr[phdr.p_filesz], 0,
 					phdr.p_memsz - phdr.p_filesz);
+			prot = _prot(phdr.p_flags);
+#ifdef DEBUG
+			fprintf(stderr, "DEBUG: mprotect(%p, %lu, %d)\n",
+					addr, (unsigned long)phdr.p_memsz, prot);
+#endif
+			if(prot != (PROT_READ | PROT_WRITE)
+					&& mprotect(addr, phdr.p_memsz,
+						prot) != 0)
+				return _error(2, "%s: %s", filename,
+						strerror(errno));
+			offset = ehdr->e_phoff + (i * ehdr->e_phentsize);
+			if(lseek(fd, offset, SEEK_SET) != offset)
+				return _error(2, "%s: %s", filename,
+						strerror(errno));
+		}
 		/* FIXME keep this value */
 		phdr.p_vaddr = (intptr_t)addr;
 	}
@@ -305,4 +333,16 @@ static int _error(int code, char const * format, ...)
 	va_end(ap);
 	fputs("\n", stderr);
 	return code;
+}
+
+
+/* prot */
+static int _prot(int flags)
+{
+	int ret = PROT_NONE;
+
+	ret |= (flags & PF_R) ? PROT_READ : 0;
+	ret |= (flags & PF_W) ? PROT_WRITE : 0;
+	ret |= (flags & PF_X) ? PROT_EXEC : 0;
+	return ret;
 }
