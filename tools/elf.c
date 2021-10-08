@@ -85,6 +85,7 @@ static int ELFFUNC(phdr)(char const * filename, FILE * fp, ELFTYPE(Ehdr) * ehdr,
 {
 	int ret = 0;
 	size_t i;
+	size_t cnt;
 	ELFTYPE(Dyn) * dyn;
 
 	if(fread(phdr, sizeof(*phdr), ehdr->e_phnum, fp) != ehdr->e_phnum)
@@ -95,11 +96,12 @@ static int ELFFUNC(phdr)(char const * filename, FILE * fp, ELFTYPE(Ehdr) * ehdr,
 			ret = -_error(filename, "Corrupted ELF file", 1);
 		return ret;
 	}
-	printf("%s:\n", filename);
-	for(i = 0; i < ehdr->e_phnum; i++)
+	for(i = 0, cnt = 0; i < ehdr->e_phnum; i++)
 	{
 		if(phdr[i].p_type != PT_DYNAMIC)
 			continue;
+		if(cnt++ == 0)
+			printf("%s:\n", filename);
 		if(fseek(fp, phdr[i].p_offset, SEEK_SET) != 0)
 		{
 			ret |= -_error(filename, strerror(errno), 1);
@@ -123,6 +125,8 @@ static int ELFFUNC(phdr)(char const * filename, FILE * fp, ELFTYPE(Ehdr) * ehdr,
 		}
 		free(dyn);
 	}
+	if(cnt == 0)
+		ret |= -_error(filename, "Not a dynamic ELF object", 1);
 	return ret;
 }
 
