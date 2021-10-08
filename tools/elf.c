@@ -29,29 +29,27 @@
 
 
 #include <sys/stat.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include "common.h"
+#include "elf.h"
 
 
 /* macros */
-# undef ELFFUNC
-# undef ELFTYPE
 #if ELFSIZE == 32
-# define ELFFUNC(func) _do_ ## func ## 32
+# define ELFFUNC(func) elf32_ ## func
 # define ELFTYPE(type) Elf ## 32 ## _ ## type
 #elif ELFSIZE == 64
-# define ELFFUNC(func) _do_ ## func ## 64
+# define ELFFUNC(func) elf64_ ## func
 # define ELFTYPE(type) Elf ## 64 ## _ ## type
 #else
 # error ELFSIZE is not defined
 #endif
 
 
-/* prototypes */
-static int ELFFUNC(ldd)(char const * filename, FILE * fp, ELFTYPE(Ehdr) * ehdr,
-		char const * ldpath);
-
-
 /* functions */
-/* ldd */
+/* elf_ldd */
 static int ELFFUNC(phdr)(char const * filename, FILE * fp, ELFTYPE(Ehdr) * ehdr,
 		ELFTYPE(Phdr) * phdr, char const * ldpath);
 static int ELFFUNC(phdr_dyn)(char const * filename, FILE * fp,
@@ -61,20 +59,20 @@ static int ELFFUNC(phdr_dyn_print)(char const * filename, char const * rpath);
 static char * ELFFUNC(string)(char const * filename, FILE * fp,
 		ELFTYPE(Ehdr) * ehdr, ELFTYPE(Addr) addr, ELFTYPE(Addr) index);
 
-static int ELFFUNC(ldd)(char const * filename, FILE * fp, ELFTYPE(Ehdr) * ehdr,
+int ELFFUNC(ldd)(char const * filename, FILE * fp, ELFTYPE(Ehdr) * ehdr,
 		char const * ldpath)
 {
 	int ret;
 	ELFTYPE(Phdr) * phdr;
 
 	if(ehdr->e_phnum == 0)
-		return -_error(filename, "No program header found", 1);
+		return -error(filename, "No program header found", 1);
 	if(ehdr->e_phentsize != sizeof(*phdr))
-		return -_error(filename, "Unexpected program header size", 1);
+		return -error(filename, "Unexpected program header size", 1);
 	if(fseek(fp, ehdr->e_phoff, SEEK_SET) != 0)
-		return -_error(filename, strerror(errno), 1);
+		return -error(filename, strerror(errno), 1);
 	if((phdr = malloc(sizeof(*phdr) * ehdr->e_phnum)) == NULL)
-		return -_error(filename, strerror(errno), 1);
+		return -error(filename, strerror(errno), 1);
 	ret = ELFFUNC(phdr)(filename, fp, ehdr, phdr, ldpath);
 	free(phdr);
 	return ret;
@@ -91,9 +89,9 @@ static int ELFFUNC(phdr)(char const * filename, FILE * fp, ELFTYPE(Ehdr) * ehdr,
 	if(fread(phdr, sizeof(*phdr), ehdr->e_phnum, fp) != ehdr->e_phnum)
 	{
 		if(ferror(fp) != 0)
-			ret = -_error(filename, strerror(errno), 1);
+			ret = -error(filename, strerror(errno), 1);
 		else
-			ret = -_error(filename, "Corrupted ELF file", 1);
+			ret = -error(filename, "Corrupted ELF file", 1);
 		return ret;
 	}
 	for(i = 0, cnt = 0; i < ehdr->e_phnum; i++)
@@ -104,12 +102,12 @@ static int ELFFUNC(phdr)(char const * filename, FILE * fp, ELFTYPE(Ehdr) * ehdr,
 			printf("%s:\n", filename);
 		if(fseek(fp, phdr[i].p_offset, SEEK_SET) != 0)
 		{
-			ret |= -_error(filename, strerror(errno), 1);
+			ret |= -error(filename, strerror(errno), 1);
 			continue;
 		}
 		if((dyn = malloc(phdr[i].p_filesz)) == NULL)
 		{
-			ret |= -_error(filename, strerror(errno), 1);
+			ret |= -error(filename, strerror(errno), 1);
 			continue;
 		}
 		if(fread(dyn, phdr[i].p_filesz, 1, fp) == 1)
@@ -118,15 +116,15 @@ static int ELFFUNC(phdr)(char const * filename, FILE * fp, ELFTYPE(Ehdr) * ehdr,
 		else
 		{
 			if(ferror(fp) != 0)
-				ret |= -_error(filename, strerror(errno), 1);
+				ret |= -error(filename, strerror(errno), 1);
 			else
-				ret |= -_error(filename, "Corrupted ELF file",
+				ret |= -error(filename, "Corrupted ELF file",
 						1);
 		}
 		free(dyn);
 	}
 	if(cnt == 0)
-		ret |= -_error(filename, "Not a dynamic ELF object", 1);
+		ret |= -error(filename, "Not a dynamic ELF object", 1);
 	return ret;
 }
 
@@ -150,7 +148,7 @@ static int ELFFUNC(phdr_dyn)(char const * filename, FILE * fp,
 			r = i;
 	}
 	if(s < 0)
-		return -_error(filename, "Missing string section", 1);
+		return -error(filename, "Missing string section", 1);
 	if(s >= 0 && r >= 0)
 		rpath = ELFFUNC(string)(filename, fp, ehdr, dyn[s].d_un.d_val,
 				dyn[r].d_un.d_val);
@@ -224,7 +222,7 @@ static char * ELFFUNC(string)(char const * filename, FILE * fp,
 
 	if(fseek(fp, ehdr->e_shoff, SEEK_SET) != 0)
 	{
-		_error(filename, strerror(errno), 1);
+		error(filename, strerror(errno), 1);
 		return NULL;
 	}
 	for(i = 0; i < ehdr->e_shnum; i++)
@@ -232,9 +230,9 @@ static char * ELFFUNC(string)(char const * filename, FILE * fp,
 		if(fread(&shdr, sizeof(shdr), 1, fp) != 1)
 		{
 			if(ferror(fp) != 0)
-				_error(filename, strerror(errno), 1);
+				error(filename, strerror(errno), 1);
 			else
-				_error(filename, "Corrupted ELF file", 1);
+				error(filename, "Corrupted ELF file", 1);
 			break;
 		}
 		if(shdr.sh_type != SHT_STRTAB)
@@ -244,15 +242,15 @@ static char * ELFFUNC(string)(char const * filename, FILE * fp,
 		if(fseek(fp, shdr.sh_offset, SEEK_SET) != 0
 				|| (p = malloc(shdr.sh_size)) == NULL)
 		{
-			_error(filename, strerror(errno), 1);
+			error(filename, strerror(errno), 1);
 			break;
 		}
 		if(fread(p, sizeof(*p), shdr.sh_size, fp) != shdr.sh_size)
 		{
 			if(ferror(fp) != 0)
-				_error(filename, strerror(errno), 1);
+				error(filename, strerror(errno), 1);
 			else
-				_error(filename, "Corrupted ELF file", 1);
+				error(filename, "Corrupted ELF file", 1);
 			break;
 		}
 		for(i = index; i < shdr.sh_size; i++)
@@ -260,7 +258,7 @@ static char * ELFFUNC(string)(char const * filename, FILE * fp,
 			if(p[i] != '\0')
 				continue;
 			if((ret = strdup(&p[index])) == NULL)
-				_error(filename, strerror(errno), 1);
+				error(filename, strerror(errno), 1);
 			free(p);
 			return ret;
 		}

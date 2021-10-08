@@ -33,19 +33,17 @@
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
-#include <elf.h>
+#include "common.h"
+#include "elf.h"
+
+#ifndef PROGNAME_LDD
+# define PROGNAME_LDD "ldd"
+#endif
 
 
 /* private */
 /* prototypes */
-static int _error(char const * error1, char const * error2, int ret);
 static int _ldd(char const * filename, char const * ldpath);
-#undef ELFSIZE
-#define ELFSIZE 32
-#include "elf.c"
-#undef ELFSIZE
-#define ELFSIZE 64
-#include "elf.c"
 static int _usage(void);
 
 
@@ -89,34 +87,25 @@ static int _ldd(char const * filename, char const * ldpath)
 	} elf;
 
 	if((fp = fopen(filename, "r")) == NULL)
-		return _error(filename, strerror(errno), 1);
+		return error(filename, strerror(errno), 1);
 	if(fread(&elf, sizeof(elf), 1, fp) == 1)
 	{
 		if(memcmp(elf.e_ident, ELFMAG, SELFMAG) != 0)
-			ret = -_error(filename, "Not an ELF file", 1);
+			ret = -error(filename, "Not an ELF file", 1);
 		else if(elf.e_ident[EI_CLASS] == ELFCLASS32)
-			ret = _do_ldd32(filename, fp, &elf.ehdr32, ldpath);
+			ret = elf32_ldd(filename, fp, &elf.ehdr32, ldpath);
 		else if(elf.e_ident[EI_CLASS] == ELFCLASS64)
-			ret = _do_ldd64(filename, fp, &elf.ehdr64, ldpath);
+			ret = elf64_ldd(filename, fp, &elf.ehdr64, ldpath);
 		else
-			ret = -_error(filename, "Could not determine ELF class",
+			ret = -error(filename, "Could not determine ELF class",
 					1);
 	}
 	else if(ferror(fp) != 0)
-		ret = -_error(filename, strerror(errno), 1);
+		ret = -error(filename, strerror(errno), 1);
 	else
-		ret = -_error(filename, "Not an ELF file", 1);
+		ret = -error(filename, "Not an ELF file", 1);
 	if(fclose(fp) != 0)
-		ret = -_error(filename, strerror(errno), 1);
-	return ret;
-}
-
-
-/* error */
-static int _error(char const * error1, char const * error2, int ret)
-{
-	fprintf(stderr, "%s: %s%s%s\n", "ldd", error1, (error2 != NULL) ? ": "
-			: "", (error2 != NULL) ? error2 : "");
+		ret = -error(filename, strerror(errno), 1);
 	return ret;
 }
 
@@ -124,6 +113,6 @@ static int _error(char const * error1, char const * error2, int ret)
 /* usage */
 static int _usage(void)
 {
-	fputs("Usage: ldd filename...\n", stderr);
+	fputs("Usage: " PROGNAME_LDD " filename...\n", stderr);
 	return 1;
 }
