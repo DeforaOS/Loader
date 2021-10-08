@@ -35,6 +35,7 @@ CFLAGS=
 LDFLAGS=
 PROGNAME="distcheck.sh"
 TARGET="tests.log"
+TZ="UTC"
 #executables
 DATE="date"
 [ -n "$MAKE" ] || MAKE="make"
@@ -56,7 +57,7 @@ _distcheck()
 _date()
 {
 	if [ -n "$SOURCE_DATE_EPOCH" ]; then
-		TZ=UTC $DATE -d "@$SOURCE_DATE_EPOCH" '+%a %b %d %T %Z %Y'
+		TZ="$TZ" $DATE -d "@$SOURCE_DATE_EPOCH" '+%a %b %d %T %Z %Y'
 	else
 		$DATE
 	fi
