@@ -28,15 +28,16 @@
 
 
 
-#ifndef LOADER_LOADER_H
-# define LOADER_LOADER_H
+.section .text
+.global loader_enter
+.type loader_enter,@function
+.type _loader_enter_do,@function
+loader_enter:
+	/* reset the stack */
+	xor	%rbp, %rbp
 
+	call	_loader_enter_do
+	call	_exit
 
-/* Loader */
-/* public */
-/* functions */
-int loader(char const * filename, int argc, char * argv[]);
-int loader_enter(int argc, char * argv[], char ** envp, void * auxv,
-		void * entrypoint);
-
-#endif /* !LOADER_LOADER_H */
+_loader_enter_do:
+	jmp	*%r8

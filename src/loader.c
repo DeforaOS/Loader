@@ -53,10 +53,15 @@ static int _prot(int flags);
 
 
 /* public */
+/* variables */
+extern char ** environ;
+
+
 /* functions */
 /* loader */
 static int _loader_do(int fd, char const * filename, int argc, char * argv[]);
-static int _do_phdr(int fd, char const * filename, Elf_Ehdr * ehdr);
+static int _do_phdr(int fd, char const * filename, Elf_Ehdr * ehdr,
+		void ** entrypoint);
 static size_t _do_phdr_align_bits(unsigned long align);
 static int _do_shdr(int fd, char const * filename, Elf_Ehdr * ehdr);
 static int _do_shdr_rela(int fd, char const * filename, Elf_Shdr * shdr,
@@ -78,6 +83,7 @@ static int _loader_do(int fd, char const * filename, int argc, char * argv[])
 {
 	int ret;
 	Elf_Ehdr ehdr;
+	void * entrypoint = NULL;
 
 	if(read(fd, &ehdr, sizeof(ehdr)) != sizeof(ehdr))
 		return _error(2, "%s: %s", filename, strerror(errno));
@@ -90,16 +96,22 @@ static int _loader_do(int fd, char const * filename, int argc, char * argv[])
 	if(ehdr.e_ehsize != sizeof(ehdr))
 		return _error(2, "%s: %s", filename,
 				"Invalid or unsupported ELF file");
-	if((ret = _do_phdr(fd, filename, &ehdr)) != 0
+	if((ret = _do_phdr(fd, filename, &ehdr, &entrypoint)) != 0
 			|| (ret = _do_shdr(fd, filename, &ehdr)) != 0)
 		return ret;
+	if(entrypoint == NULL)
+		return _error(2, "%s: %s", filename, "Entrypoint not set");
 #ifdef DEBUG
-	fprintf(stderr, "DEBUG: e_entry=%#lx\n", (unsigned long)ehdr.e_entry);
+	fprintf(stderr, "DEBUG: loader_enter(%d, %p, %p, %p, %p)\n",
+			argc, argv, environ, NULL, entrypoint);
 #endif
+	ret = loader_enter(argc, argv, environ, NULL, entrypoint);
+	_exit(ret);
 	return 0;
 }
 
-static int _do_phdr(int fd, char const * filename, Elf_Ehdr * ehdr)
+static int _do_phdr(int fd, char const * filename, Elf_Ehdr * ehdr,
+		void ** entrypoint)
 {
 	Elf_Phdr phdr;
 	size_t i;
@@ -203,8 +215,18 @@ static int _do_phdr(int fd, char const * filename, Elf_Ehdr * ehdr)
 				return _error(2, "%s: %s", filename,
 						strerror(errno));
 		}
-		/* FIXME keep this value */
-		phdr.p_vaddr = (intptr_t)addr;
+		if(prot & PROT_EXEC)
+		{
+			*entrypoint = (char *)(ehdr->e_entry - phdr.p_vaddr
+					+ (intptr_t)addr);
+#ifdef DEBUG
+			fprintf(stderr, "DEBUG: e_entry=%#lx p_vaddr=%#lx"
+					" addr=%p => %p\n",
+					(unsigned long)ehdr->e_entry,
+					(unsigned long)phdr.p_vaddr,
+					addr, *entrypoint);
+#endif
+		}
 	}
 	return 0;
 }
