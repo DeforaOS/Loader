@@ -163,6 +163,7 @@ static int _elf_phdr(int fd, char const * filename, Elf_Ehdr * ehdr,
 		else if(phdr.p_filesz == phdr.p_memsz)
 		{
 			flags |= MAP_FILE;
+			prot = _elf_prot(phdr.p_flags);
 			if(prot & PROT_WRITE)
 				flags |= MAP_PRIVATE;
 			f = fd;
