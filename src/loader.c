@@ -35,7 +35,11 @@
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
-#include <elf.h>
+#if defined(__APPLE__)
+# include <mach-o/loader.h>
+#elif defined(__ELF__)
+# include <elf.h>
+#endif
 #include "loader.h"
 
 #ifndef PROGNAME_LOADER
@@ -46,9 +50,9 @@
 /* Loader */
 /* private */
 /* prototypes */
-static int _error(int code, char const * format, ...);
+static int _loader_elf(int fd, char const * filename, int argc, char * argv[]);
 
-static int _prot(int flags);
+static int _error(int code, char const * format, ...);
 
 
 /* public */
@@ -58,14 +62,6 @@ extern char ** environ;
 
 /* functions */
 /* loader */
-static int _loader_do(int fd, char const * filename, int argc, char * argv[]);
-static int _do_phdr(int fd, char const * filename, Elf_Ehdr * ehdr,
-		void ** entrypoint);
-static size_t _do_phdr_align_bits(unsigned long align);
-static int _do_shdr(int fd, char const * filename, Elf_Ehdr * ehdr);
-static int _do_shdr_rela(int fd, char const * filename, Elf_Shdr * shdr,
-		size_t entsize);
-
 int loader(char const * filename, int argc, char * argv[])
 {
 	int ret;
@@ -73,12 +69,24 @@ int loader(char const * filename, int argc, char * argv[])
 
 	if((fd = open(filename, O_RDONLY)) < 0)
 		return _error(2, "%s: %s", filename, strerror(errno));
-	ret = _loader_do(fd, filename, argc, argv);
+	ret = _loader_elf(fd, filename, argc, argv);
 	close(fd);
 	return ret;
 }
 
-static int _loader_do(int fd, char const * filename, int argc, char * argv[])
+
+/* private */
+/* functions */
+#if defined(__ELF__)
+static int _elf_phdr(int fd, char const * filename, Elf_Ehdr * ehdr,
+		void ** entrypoint);
+static size_t _elf_phdr_align_bits(unsigned long align);
+static int _elf_prot(int flags);
+static int _elf_shdr(int fd, char const * filename, Elf_Ehdr * ehdr);
+static int _elf_shdr_rela(int fd, char const * filename, Elf_Shdr * shdr,
+		size_t entsize);
+
+static int _loader_elf(int fd, char const * filename, int argc, char * argv[])
 {
 	int ret;
 	Elf_Ehdr ehdr;
@@ -95,21 +103,21 @@ static int _loader_do(int fd, char const * filename, int argc, char * argv[])
 	if(ehdr.e_ehsize != sizeof(ehdr))
 		return _error(2, "%s: %s", filename,
 				"Invalid or unsupported ELF file");
-	if((ret = _do_phdr(fd, filename, &ehdr, &entrypoint)) != 0
-			|| (ret = _do_shdr(fd, filename, &ehdr)) != 0)
+	if((ret = _elf_phdr(fd, filename, &ehdr, &entrypoint)) != 0
+			|| (ret = _elf_shdr(fd, filename, &ehdr)) != 0)
 		return ret;
 	if(entrypoint == NULL)
 		return _error(2, "%s: %s", filename, "Entrypoint not set");
-#ifdef DEBUG
+# ifdef DEBUG
 	fprintf(stderr, "DEBUG: loader_enter(%d, %p, %p, %p, %p)\n",
 			argc, argv, environ, NULL, entrypoint);
-#endif
+# endif
 	ret = loader_enter(argc, argv, environ, NULL, entrypoint);
 	_exit(ret);
 	return 0;
 }
 
-static int _do_phdr(int fd, char const * filename, Elf_Ehdr * ehdr,
+static int _elf_phdr(int fd, char const * filename, Elf_Ehdr * ehdr,
 		void ** entrypoint)
 {
 	Elf_Phdr phdr;
@@ -130,7 +138,7 @@ static int _do_phdr(int fd, char const * filename, Elf_Ehdr * ehdr,
 		if(read(fd, &phdr, sizeof(phdr)) != sizeof(phdr))
 			return _error(2, "%s: %s", filename,
 					"Invalid or unsupported ELF file");
-#ifdef DEBUG
+# ifdef DEBUG
 		fprintf(stderr, "DEBUG: %zu: p_type=%u p_flags=%#x"
 				" p_offset=%#lx p_vaddr=%#lx, p_paddr=%#lx"
 				" p_filesz=%lu p_memsz=%lu p_align=%lu\n", i,
@@ -141,31 +149,20 @@ static int _do_phdr(int fd, char const * filename, Elf_Ehdr * ehdr,
 				(unsigned long)phdr.p_filesz,
 				(unsigned long)phdr.p_memsz,
 				(unsigned long)phdr.p_align);
-#endif
+# endif
 		if(phdr.p_type != PT_LOAD)
 			continue;
-		flags = MAP_ALIGNED(_do_phdr_align_bits(phdr.p_align));
+		flags = MAP_ALIGNED(_elf_phdr_align_bits(phdr.p_align));
 		if(phdr.p_filesz == 0)
 		{
-#if 0
-			addr = NULL;
-#endif
 			flags |= MAP_ANON;
-			prot = _prot(phdr.p_flags);
+			prot = _elf_prot(phdr.p_flags);
 			f = -1;
 			offset = 0;
 		}
 		else if(phdr.p_filesz == phdr.p_memsz)
 		{
-#if 0
-			addr = (void *)phdr.p_vaddr;
-#endif
 			flags |= MAP_FILE;
-			prot = _prot(phdr.p_flags);
-#if 0
-			if(phdr.p_vaddr != 0)
-				flags |= MAP_TRYFIXED;
-#endif
 			if(prot & PROT_WRITE)
 				flags |= MAP_PRIVATE;
 			f = fd;
@@ -181,11 +178,11 @@ static int _do_phdr(int fd, char const * filename, Elf_Ehdr * ehdr,
 		else
 			return _error(2, "%s: %s", filename,
 					"Invalid or unsupported ELF file");
-#ifdef DEBUG
+# ifdef DEBUG
 		fprintf(stderr, "DEBUG: mmap(%p, %lu, %d, %d, %d, %lld)\n",
 				NULL, (unsigned long)phdr.p_memsz, prot, flags,
 				f, (long long)offset);
-#endif
+# endif
 		if((addr = mmap(NULL, phdr.p_memsz, prot, flags, f, offset))
 				== MAP_FAILED)
 			return _error(2, "%s: %s", filename, strerror(errno));
@@ -199,11 +196,11 @@ static int _do_phdr(int fd, char const * filename, Elf_Ehdr * ehdr,
 						strerror(errno));
 			memset(&addr[phdr.p_filesz], 0,
 					phdr.p_memsz - phdr.p_filesz);
-			prot = _prot(phdr.p_flags);
-#ifdef DEBUG
+			prot = _elf_prot(phdr.p_flags);
+# ifdef DEBUG
 			fprintf(stderr, "DEBUG: mprotect(%p, %lu, %d)\n",
 					addr, (unsigned long)phdr.p_memsz, prot);
-#endif
+# endif
 			if(prot != (PROT_READ | PROT_WRITE)
 					&& mprotect(addr, phdr.p_memsz,
 						prot) != 0)
@@ -218,19 +215,19 @@ static int _do_phdr(int fd, char const * filename, Elf_Ehdr * ehdr,
 		{
 			*entrypoint = (char *)(ehdr->e_entry - phdr.p_vaddr
 					+ (intptr_t)addr);
-#ifdef DEBUG
+# ifdef DEBUG
 			fprintf(stderr, "DEBUG: e_entry=%#lx p_vaddr=%#lx"
 					" addr=%p => %p\n",
 					(unsigned long)ehdr->e_entry,
 					(unsigned long)phdr.p_vaddr,
 					addr, *entrypoint);
-#endif
+# endif
 		}
 	}
 	return 0;
 }
 
-static size_t _do_phdr_align_bits(unsigned long align)
+static size_t _elf_phdr_align_bits(unsigned long align)
 {
 	size_t i = 0;
 
@@ -239,16 +236,26 @@ static size_t _do_phdr_align_bits(unsigned long align)
 	for(i = 0; i < sizeof(align) * 8; i++)
 		if(align & (1 << i))
 		{
-#ifdef DEBUG
+# ifdef DEBUG
 			fprintf(stderr, "DEBUG: %s(0x%lx) => %zu\n", __func__,
 					align, i);
-#endif
+# endif
 			return i;
 		}
 	return 0;
 }
 
-static int _do_shdr(int fd, char const * filename, Elf_Ehdr * ehdr)
+static int _elf_prot(int flags)
+{
+	int ret = PROT_NONE;
+
+	ret |= (flags & PF_R) ? PROT_READ : 0;
+	ret |= (flags & PF_W) ? PROT_WRITE : 0;
+	ret |= (flags & PF_X) ? PROT_EXEC : 0;
+	return ret;
+}
+
+static int _elf_shdr(int fd, char const * filename, Elf_Ehdr * ehdr)
 {
 	int ret;
 	Elf_Shdr shdr;
@@ -265,7 +272,7 @@ static int _do_shdr(int fd, char const * filename, Elf_Ehdr * ehdr)
 		if(read(fd, &shdr, sizeof(shdr)) != sizeof(shdr))
 			return _error(2, "%s: %s", filename,
 					"Invalid or unsupported ELF file");
-#ifdef DEBUG
+# ifdef DEBUG
 		fprintf(stderr, "DEBUG: %zu: sh_name=%u sh_type=%u"
 				" sh_flags=%#lx sh_addr=%#lx sh_offset=%#lx"
 				" sh_size=%lu sh_link=%u sh_info=%u"
@@ -278,10 +285,10 @@ static int _do_shdr(int fd, char const * filename, Elf_Ehdr * ehdr)
 				shdr.sh_link, shdr.sh_info,
 				(unsigned long)shdr.sh_addralign,
 				(unsigned long)shdr.sh_entsize);
-#endif
+# endif
 		if(shdr.sh_type == SHT_REL
 				|| shdr.sh_type == SHT_RELA)
-			ret = _do_shdr_rela(fd, filename, &shdr,
+			ret = _elf_shdr_rela(fd, filename, &shdr,
 					shdr.sh_entsize);
 		else
 			continue;
@@ -294,7 +301,7 @@ static int _do_shdr(int fd, char const * filename, Elf_Ehdr * ehdr)
 	return 0;
 }
 
-static int _do_shdr_rela(int fd, char const * filename, Elf_Shdr * shdr,
+static int _elf_shdr_rela(int fd, char const * filename, Elf_Shdr * shdr,
 		size_t entsize)
 {
 	Elf_Rela rela;
@@ -312,16 +319,16 @@ static int _do_shdr_rela(int fd, char const * filename, Elf_Shdr * shdr,
 		if(read(fd, &rela, entsize) != (ssize_t)entsize)
 			return _error(2, "%s: %s", filename,
 					"Invalid or unsupported ELF file");
-#ifdef DEBUG
+# ifdef DEBUG
 		fprintf(stderr, "DEBUG: %zu: r_offset=%#lx r_type=%lu"
 				" r_addend=%ld\n", i,
 				(unsigned long)rela.r_offset,
 				(unsigned long)ELF_R_TYPE(rela.r_info),
 				(long)rela.r_addend);
-#endif
+# endif
 		switch(ELF_R_TYPE(rela.r_info))
 		{
-#if defined(__amd64__)
+# if defined(__amd64__)
 			case R_X86_64_NONE:
 				break;
 			case R_X86_64_GLOB_DAT:
@@ -329,7 +336,7 @@ static int _do_shdr_rela(int fd, char const * filename, Elf_Shdr * shdr,
 			case R_X86_64_RELATIVE:
 				/* FIXME implement */
 				break;
-#endif
+# endif
 			default:
 				return _error(2, "%s: %lu:"
 						" Unsupported relocation\n",
@@ -339,10 +346,18 @@ static int _do_shdr_rela(int fd, char const * filename, Elf_Shdr * shdr,
 	}
 	return 0;
 }
+#else
+static int _loader_elf(int fd, char const * filename, int argc, char * argv[])
+{
+	(void) fd;
+	(void) argc;
+	(void) argv;
+
+	return _error(1, "%s: %s", filename, "Unsupported file format");
+}
+#endif
 
 
-/* private */
-/* functions */
 /* error */
 static int _error(int code, char const * format, ...)
 {
@@ -354,16 +369,4 @@ static int _error(int code, char const * format, ...)
 	va_end(ap);
 	fputs("\n", stderr);
 	return code;
-}
-
-
-/* prot */
-static int _prot(int flags)
-{
-	int ret = PROT_NONE;
-
-	ret |= (flags & PF_R) ? PROT_READ : 0;
-	ret |= (flags & PF_W) ? PROT_WRITE : 0;
-	ret |= (flags & PF_X) ? PROT_EXEC : 0;
-	return ret;
 }
