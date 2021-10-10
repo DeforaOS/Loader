@@ -28,7 +28,6 @@
 
 
 
-#define DEBUG
 #include <sys/mman.h>
 #include <stdarg.h>
 #include <fcntl.h>
