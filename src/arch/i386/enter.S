@@ -28,9 +28,11 @@
 
 
 
-.section .text
+.text
+#ifndef __clang__
 .global loader_enter
 .type loader_enter,@function
+#endif
 loader_enter:
 	/* reset the stack */
 	xor	%ebp, %ebp

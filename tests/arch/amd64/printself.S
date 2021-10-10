@@ -30,8 +30,10 @@
 
 /* main */
 .text
+#ifndef __clang__
 .global main
 .type main,@function
+#endif
 main:
 	/* puts(argv[0]) */
 	mov	(%rsi), %rdi
