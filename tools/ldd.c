@@ -28,54 +28,19 @@
 
 
 
-#include <unistd.h>
-#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
 #include "common.h"
 #include "elf.h"
-
-#ifndef PROGNAME_LDD
-# define PROGNAME_LDD "ldd"
-#endif
-
-
-/* private */
-/* prototypes */
-static int _ldd(char const * filename, char const * ldpath);
-static int _usage(void);
+#include "ldd.h"
 
 
 /* public */
 /* functions */
-/* main */
-int main(int argc, char * argv[])
-{
-	int ret = 0;
-	int o;
-	int i;
-	char const * ldpath;
-
-	while((o = getopt(argc, argv, "")) != -1)
-		switch(o)
-		{
-			default:
-				return _usage();
-		}
-	if(optind == argc)
-		return _usage();
-	ldpath = getenv("LD_LIBRARY_PATH");
-	for(i = optind; i < argc; i++)
-		ret |= _ldd(argv[i], ldpath);
-	return (ret == 0) ? 0 : 2;
-}
-
-
-/* private */
-/* functions */
-/* ldd */
-static int _ldd(char const * filename, char const * ldpath)
+#if defined(__ELF__)
+/* ldd_elf */
+int ldd_elf(char const * filename, char const * ldpath)
 {
 	int ret = 1;
 	FILE * fp;
@@ -108,11 +73,4 @@ static int _ldd(char const * filename, char const * ldpath)
 		ret = -error(filename, strerror(errno), 1);
 	return ret;
 }
-
-
-/* usage */
-static int _usage(void)
-{
-	fputs("Usage: " PROGNAME_LDD " filename...\n", stderr);
-	return 1;
-}
+#endif

@@ -28,19 +28,13 @@
 
 
 
-#ifndef LDD_ELF_H
-# define LDD_ELF_H
-
-# if defined(__ELF__)
-#  include <stdio.h>
-#  include <elf.h>
+#ifndef LDD_LDD_H
+# define LDD_LDD_H
 
 
 /* functions */
-int elf32_ldd(char const * filename, FILE * fp, Elf32_Ehdr * ehdr,
-		char const * ldpath);
-int elf64_ldd(char const * filename, FILE * fp, Elf64_Ehdr * ehdr,
-		char const * ldpath);
-# endif /* __ELF__ */
+# if defined(__ELF__)
+int ldd_elf(char const * filename, char const * ldpath);
+# endif
 
-#endif /* !LDD_ELF_H */
+#endif /* !LDD_LDD_H */

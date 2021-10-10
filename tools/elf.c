@@ -36,16 +36,17 @@
 #include "elf.h"
 
 
+#if defined(__ELF__)
 /* macros */
-#if ELFSIZE == 32
-# define ELFFUNC(func) elf32_ ## func
-# define ELFTYPE(type) Elf ## 32 ## _ ## type
-#elif ELFSIZE == 64
-# define ELFFUNC(func) elf64_ ## func
-# define ELFTYPE(type) Elf ## 64 ## _ ## type
-#else
-# error ELFSIZE is not defined
-#endif
+# if ELFSIZE == 32
+#  define ELFFUNC(func) elf32_ ## func
+#  define ELFTYPE(type) Elf ## 32 ## _ ## type
+# elif ELFSIZE == 64
+#  define ELFFUNC(func) elf64_ ## func
+#  define ELFTYPE(type) Elf ## 64 ## _ ## type
+# else
+#  error ELFSIZE is not defined
+# endif
 
 
 /* functions */
@@ -152,10 +153,10 @@ static int ELFFUNC(phdr_dyn)(char const * filename, FILE * fp,
 	if(s >= 0 && r >= 0)
 		rpath = ELFFUNC(string)(filename, fp, ehdr, dyn[s].d_un.d_val,
 				dyn[r].d_un.d_val);
-#ifdef DEBUG
+# ifdef DEBUG
 	fprintf(stderr, "DEBUG: %s() strtab=%ld rpath=%ld \"%s\"\n", __func__,
 			dyn[s].d_un.d_val, dyn[r].d_un.d_val, rpath);
-#endif
+# endif
 	for(i = 0; (i + 1) * sizeof(*dyn) < phdr->p_filesz; i++)
 	{
 		if(dyn[i].d_tag == DT_NULL)
@@ -183,10 +184,10 @@ static int ELFFUNC(phdr_dyn_print)(char const * filename, char const * rpath)
 	struct stat st;
 	int res;
 
-#ifdef DEBUG
+# ifdef DEBUG
 	fprintf(stderr, "DEBUG: %s(\"%s\", \"%s\")\n", __func__, filename,
 			rpath);
-#endif
+# endif
 	if(rpath == NULL)
 		return -1;
 	for(i = 0;;)
@@ -267,3 +268,4 @@ static char * ELFFUNC(string)(char const * filename, FILE * fp,
 	free(p);
 	return NULL;
 }
+#endif

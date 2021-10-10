@@ -1,5 +1,5 @@
 /* $Id$ */
-/* Copyright (c) 2021 Pierre Pronchery <khorben@defora.org> */
+/* Copyright (c) 2010-2021 Pierre Pronchery <khorben@defora.org> */
 /* This file is part of DeforaOS System Loader */
 /* All rights reserved.
  *
@@ -28,19 +28,68 @@
 
 
 
-#ifndef LDD_ELF_H
-# define LDD_ELF_H
+#include <unistd.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <errno.h>
+#include "common.h"
+#include "ldd.h"
 
-# if defined(__ELF__)
-#  include <stdio.h>
-#  include <elf.h>
+#ifndef PROGNAME_LDD
+# define PROGNAME_LDD "ldd"
+#endif
 
 
+/* private */
+/* prototypes */
+static int _ldd_unsupported(char const * filename, char const * ldpath);
+static int _usage(void);
+
+
+/* public */
 /* functions */
-int elf32_ldd(char const * filename, FILE * fp, Elf32_Ehdr * ehdr,
-		char const * ldpath);
-int elf64_ldd(char const * filename, FILE * fp, Elf64_Ehdr * ehdr,
-		char const * ldpath);
-# endif /* __ELF__ */
+/* main */
+int main(int argc, char * argv[])
+{
+	int ret = 0;
+	int o;
+	int i;
+	char const * ldpath;
 
-#endif /* !LDD_ELF_H */
+	while((o = getopt(argc, argv, "")) != -1)
+		switch(o)
+		{
+			default:
+				return _usage();
+		}
+	if(optind == argc)
+		return _usage();
+	ldpath = getenv("LD_LIBRARY_PATH");
+	for(i = optind; i < argc; i++)
+#if defined(__ELF__)
+		ret |= ldd_elf(argv[i], ldpath);
+#else
+		ret |= _ldd_unsupported(argv[i], ldpath);
+#endif
+	return (ret == 0) ? 0 : 2;
+}
+
+
+/* private */
+/* functions */
+/* ldd_unsupported */
+static int _ldd_unsupported(char const * filename, char const * ldpath)
+{
+	(void) ldpath;
+
+	return -error(filename, "Unsupported file format", 1);
+}
+
+
+/* usage */
+static int _usage(void)
+{
+	fputs("Usage: " PROGNAME_LDD " filename...\n", stderr);
+	return 1;
+}
